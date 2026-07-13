@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Entretenimiento MoBol - Casino 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; user-select: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; }
+        .ui-layer { position: absolute; z-index: 10; pointer-events: none; }
+        .interactive { pointer-events: auto; }
+        
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: rgba(15, 15, 20, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        #message-box {
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform: translate(-50%, -50%) scale(0.5);
+            opacity: 0;
+            text-shadow: 0px 0px 20px rgba(0,0,0,1), 0px 0px 10px currentColor;
+        }
+        #message-box.show {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .floating { animation: float 3s ease-in-out infinite; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+
+        /* Vistas de la aplicación */
+        #auth-view, #admin-view, #game-ui, #admin-login-modal, #custom-modal { transition: opacity 0.4s ease-in-out; }
+        .hidden-view { opacity: 0; pointer-events: none; z-index: -1 !important; display: none !important; }
+    </style>
+</head>
+<body class="text-white">
+
+    <!-- CONTENEDOR 3D DE FONDO -->
+    <div id="canvas-container"></div>
+
+    <!-- MODAL PERSONALIZADO (Reemplaza a alert/prompt/confirm) -->
+    <div id="custom-modal" class="hidden-view absolute inset-0 z-[70] bg-black/90 flex items-center justify-center p-4 interactive backdrop-blur-sm">
+        <div class="glass-panel p-6 rounded-2xl w-full max-w-sm text-center border border-white/20 shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+            <h3 id="custom-modal-title" class="text-xl font-black mb-2 text-white uppercase tracking-wider">Título</h3>
+            <p id="custom-modal-msg" class="text-gray-300 text-sm mb-5">Mensaje del sistema</p>
+            <input type="text" id="custom-modal-input" class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 mb-5 text-white hidden outline-none focus:border-cyan-500 transition-colors">
+            <div class="flex gap-3">
+                <button onclick="window.closeCustomModal()" class="flex-1 bg-white/10 hover:bg-white/20 py-3 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                <button id="custom-modal-confirm-btn" class="flex-1 bg-pink-600 hover:bg-pink-500 py-3 rounded-lg font-bold text-sm shadow-[0_0_15px_rgba(219,39,119,0.4)] transition-all">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: LOGIN DE ADMINISTRADOR -->
+    <div id="admin-login-modal" class="hidden-view absolute inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 interactive backdrop-blur-sm">
+        <div class="glass-panel p-8 rounded-3xl w-full max-w-sm text-center border border-cyan-500/30 shadow-[0_0_30px_rgba(6,182,212,0.2)]">
+            <h2 class="text-2xl font-black mb-6 text-cyan-400 tracking-widest uppercase">Panel Administrativo</h2>
+            <input type="email" id="admin-email" placeholder="Usuario / Correo" class="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 text-white placeholder-gray-500 outline-none focus:border-cyan-500 transition-colors font-bold text-center">
+            <input type="password" id="admin-pass" placeholder="Contraseña" class="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-6 text-white placeholder-gray-500 outline-none focus:border-cyan-500 transition-colors font-bold text-center">
+            
+            <div class="flex gap-3">
+                <button onclick="window.closeAdminLogin()" class="flex-1 bg-white/10 hover:bg-white/20 py-3 rounded-xl font-bold text-sm transition-colors">Cancelar</button>
+                <button onclick="window.performAdminLogin()" class="flex-1 bg-cyan-600 hover:bg-cyan-500 py-3 rounded-xl font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.4)] transition-all">INGRESAR</button>
+            </div>
+            <p id="admin-login-status" class="text-red-400 text-sm mt-4 h-4"></p>
+        </div>
+    </div>
+
+    <!-- VISTA 1: LOGIN Y REGISTRO (JUGADORES) -->
+    <div id="auth-view" class="ui-layer inset-0 flex items-center justify-center interactive z-50 bg-black/60 backdrop-blur-sm p-4">
+        <div class="glass-panel p-8 rounded-3xl w-full max-w-md text-center border-t border-white/20 shadow-2xl">
+            <div class="w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full mx-auto mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(219,39,119,0.5)]">
+                <span class="text-3xl">🎰</span>
+            </div>
+            <h2 class="text-sm font-bold tracking-widest text-cyan-400 uppercase mb-1">Entretenimiento MoBol</h2>
+            <h1 class="text-3xl font-black italic tracking-tighter mb-2">NEON DROP <span class="text-pink-500">ARENA</span></h1>
+            <p class="text-gray-300 mb-6 text-sm">Ingresa tu Nickname para <strong>Registrarte</strong> o <strong>Iniciar Sesión</strong>. Tu progreso se guardará automáticamente.</p>
+            
+            <input type="text" id="username-input" placeholder="Tu Usuario (Ej: @GamerPro)" class="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 mb-4 text-white placeholder-gray-500 outline-none focus:border-pink-500 transition-colors text-center font-bold text-lg">
+            
+            <button onclick="window.loginPlayer()" class="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 py-4 rounded-xl font-black tracking-widest mb-4 shadow-lg transform active:scale-95 transition-all">
+                JUGAR AHORA
+            </button>
+            
+            <div class="border-t border-white/10 pt-4 mt-2">
+                <p class="text-xs text-gray-500 mb-3 uppercase tracking-widest font-bold">¿Eres parte del equipo?</p>
+                <button onclick="window.showAdminLogin()" class="w-full bg-white/10 hover:bg-white/20 border border-white/10 py-3 rounded-xl font-bold tracking-widest text-sm text-cyan-400 transform active:scale-95 transition-all">
+                    ACCESO ADMINISTRATIVO
+                </button>
+            </div>
+            
+            <p id="auth-status" class="text-sm text-yellow-400 mt-4 h-4"></p>
+        </div>
+    </div>
+
+    <!-- VISTA 2: DASHBOARD DE ADMINISTRACIÓN -->
+    <div id="admin-view" class="ui-layer inset-0 interactive z-40 bg-black/95 hidden-view flex flex-col p-4 md:p-6 overflow-y-auto">
+        <div class="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+            <div>
+                <h1 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">PANEL DE CONTROL</h1>
+                <p id="admin-role-badge" class="text-gray-400 text-sm uppercase tracking-widest font-bold">Cargando rol...</p>
+            </div>
+            <button onclick="window.logout()" class="bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 text-red-400 px-4 py-2 rounded-lg font-bold transition-colors">
+                Cerrar Sesión
+            </button>
+        </div>
+
+        <p id="admin-dashboard-msg" class="text-center font-bold h-6 transition-colors mb-2"></p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+            <!-- Acciones Rápidas -->
+            <div class="glass-panel p-5 rounded-2xl flex flex-col gap-4 lg:col-span-1">
+                <h2 class="font-bold text-gray-300 uppercase tracking-widest text-sm mb-2">Acciones Globales</h2>
+                <button onclick="window.giveCoinsToAll(1000)" class="bg-gradient-to-r from-yellow-500 to-orange-500 py-3 rounded-xl font-black shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:scale-[1.02] transition-transform">
+                    🎁 REGALAR 1000 A TODOS
+                </button>
+                <button onclick="window.resetAllPlayers()" class="bg-red-600/50 hover:bg-red-500/80 border border-red-500 py-3 rounded-xl font-black transition-colors">
+                    ⚠️ REINICIAR RANKING
+                </button>
+            </div>
+
+            <!-- Lista de Jugadores en Vivo (Control Independiente) -->
+            <div class="glass-panel p-5 rounded-2xl lg:col-span-3 flex flex-col h-96">
+                <h2 class="font-bold text-gray-300 uppercase tracking-widest text-sm mb-4 flex justify-between">
+                    <span>Jugadores Conectados (Control Individual)</span>
+                    <span id="total-players-count" class="text-cyan-400 font-black">0</span>
+                </h2>
+                <div class="bg-black/50 rounded-xl flex-1 overflow-hidden flex flex-col border border-white/5">
+                    <div class="grid grid-cols-12 gap-1 sm:gap-2 p-3 border-b border-white/10 text-[10px] sm:text-xs text-gray-400 font-bold uppercase">
+                        <div class="col-span-4 sm:col-span-4">Usuario</div>
+                        <div class="col-span-2 sm:col-span-2 text-center" title="Monedas">Mon.</div>
+                        <div class="col-span-2 sm:col-span-2 text-center" title="Victorias">Vict.</div>
+                        <div class="col-span-4 sm:col-span-4 text-right">Ajustes</div>
+                    </div>
+                    <div id="admin-players-list" class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+                        <!-- Generado por JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL EXCLUSIVO DEL SUPER ADMINISTRADOR -->
+        <div id="super-admin-panel" class="hidden glass-panel p-6 rounded-2xl flex-col gap-4 border border-pink-500/30">
+            <div class="flex items-center gap-3 mb-2 border-b border-white/10 pb-3">
+                <span class="text-2xl">👑</span>
+                <h2 class="font-black text-pink-400 uppercase tracking-widest">Gestión Avanzada (Modo Super Admin)</h2>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Crear Sub Admin -->
+                <div class="bg-black/40 p-5 rounded-xl border border-white/5">
+                    <h3 class="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wider">Crear Sub-Administrador</h3>
+                    <input type="text" id="new-admin-user" placeholder="Nombre de Usuario Sub-Admin" class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 mb-3 text-sm focus:border-pink-500 outline-none transition-colors text-white">
+                    <input type="password" id="new-admin-pass" placeholder="Contraseña de Acceso" class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 mb-3 text-sm focus:border-pink-500 outline-none transition-colors text-white">
+                    <button onclick="window.createSubAdmin()" class="w-full bg-pink-600 hover:bg-pink-500 py-3 rounded-lg text-sm font-black tracking-widest shadow-[0_0_10px_rgba(219,39,119,0.3)] transition-colors">REGISTRAR SUB-ADMIN</button>
+                </div>
+                
+                <!-- Registro Manual Jugador -->
+                <div class="bg-black/40 p-5 rounded-xl border border-white/5">
+                    <h3 class="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wider">Registrar Jugador Manual</h3>
+                    <input type="text" id="manual-player-user" placeholder="Nickname del Jugador (Ej: @Gamer1)" class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 mb-3 text-sm focus:border-purple-500 outline-none transition-colors text-white">
+                    <input type="number" id="manual-player-coins" placeholder="Monedas Iniciales (Ej: 1000)" class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 mb-3 text-sm focus:border-purple-500 outline-none transition-colors text-white">
+                    <button onclick="window.manualCreateUser()" class="w-full bg-purple-600 hover:bg-purple-500 py-3 rounded-lg text-sm font-black tracking-widest shadow-[0_0_10px_rgba(147,51,234,0.3)] transition-colors">CREAR / ASIGNAR EN RANKING</button>
+                </div>
+            </div>
+
+            <!-- LISTA DE SUB-ADMINS -->
+            <div class="bg-black/40 p-5 rounded-xl border border-white/5 mt-4">
+                <h3 class="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wider">Directorio de Sub-Administradores</h3>
+                <div class="bg-black/50 rounded-lg border border-white/10 max-h-60 overflow-y-auto custom-scrollbar p-2 space-y-2" id="sub-admins-list">
+                    <div class="text-center text-gray-500 text-sm py-4">Cargando datos...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VISTA 3: INTERFAZ DEL JUEGO (CLIENTE) -->
+    <div id="game-ui" class="ui-layer inset-0 hidden-view interactive pointer-events-none">
+        <!-- Navbar Top -->
+        <div class="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent pointer-events-auto">
+            <div class="flex items-center gap-3">
+                <div class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <span class="font-bold tracking-widest uppercase text-sm text-gray-300 hidden sm:inline">SALA EN VIVO</span>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="player-welcome" class="font-bold text-pink-400"></span>
+                <button onclick="window.logout()" class="bg-white/10 hover:bg-white/20 border border-white/10 px-4 py-2 rounded-full font-bold text-xs transition-colors shadow-lg">Salir</button>
+            </div>
+        </div>
+
+        <!-- Panel Izquierdo: Ranking en Vivo -->
+        <div class="absolute left-4 top-20 bottom-4 pointer-events-auto hidden md:flex flex-col w-64 glass-panel rounded-2xl p-4">
+            <h2 class="text-lg font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 mb-4 border-b border-white/10 pb-2">Top 10 Global</h2>
+            <div id="leaderboard-list" class="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                <div class="text-center text-gray-500 mt-10 text-sm">Cargando ranking...</div>
+            </div>
+        </div>
+
+        <!-- Panel Derecho: Controles de Juego -->
+        <div class="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:top-20 md:w-80 pointer-events-auto glass-panel rounded-2xl p-5 flex flex-col justify-end md:justify-start shadow-[0_15px_40px_rgba(0,0,0,0.8)]">
+            <div class="text-center mb-6 floating hidden sm:block">
+                <h2 class="text-xs font-bold tracking-widest text-cyan-400 uppercase mb-1">Entretenimiento MoBol</h2>
+                <h1 class="text-4xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400">NEON SLOT</h1>
+            </div>
+
+            <div class="bg-black/50 rounded-xl p-4 mb-4 border border-white/5">
+                <div class="flex justify-between items-center text-sm font-bold text-gray-400 mb-1 uppercase">Tus Monedas</div>
+                <div class="text-3xl font-mono text-yellow-400 transition-all" id="coins-display">--</div>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-gray-400 font-bold ml-1">Apuesta</label>
+                    <div class="flex items-center gap-2 mt-1">
+                        <button onclick="window.changeBet(-10)" class="w-12 h-12 bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 rounded-xl font-bold text-2xl text-red-400 transition-all">-</button>
+                        <div id="bet-display" class="flex-1 bg-black/50 h-12 rounded-xl flex items-center justify-center font-mono text-xl font-bold border border-white/10">10</div>
+                        <button onclick="window.changeBet(10)" class="w-12 h-12 bg-green-500/20 hover:bg-green-500/40 border border-green-500/50 rounded-xl font-bold text-2xl text-green-400 transition-all">+</button>
+                    </div>
+                </div>
+
+                <div class="hidden sm:block">
+                    <label class="text-xs uppercase tracking-widest text-gray-400 font-bold ml-1">Sala Temática</label>
+                    <select id="theme-select" onchange="window.changeTheme(this.value)" class="mt-1 bg-black/50 text-white p-3 rounded-xl w-full outline-none font-bold cursor-pointer border border-white/10 appearance-none">
+                        <option value="0">🍒 Frutas Neón</option>
+                        <option value="1">🚀 Cyber Espacio</option>
+                        <option value="2">🏴‍☠️ Oro Pirata</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="free-spins-container" class="mt-4 text-center text-cyan-400 font-black tracking-widest uppercase text-sm hidden animate-pulse">
+                ¡Tiros Gratis: <span id="free-spins-display">0</span>!
+            </div>
+            
+            <button id="btn-spin" onclick="window.spinMachine()" class="mt-6 w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 active:scale-95 font-black text-xl py-4 rounded-xl shadow-[0_0_20px_rgba(219,39,119,0.4)] uppercase tracking-widest transition-all">
+                JUGAR
+            </button>
+        </div>
+    </div>
+
+    <!-- Mensaje Central (Premios) -->
+    <div id="message-box" class="ui-layer top-1/2 left-1/2 text-center z-50 pointer-events-none w-full">
+        <div id="message-text" class="text-5xl md:text-7xl font-black italic tracking-tighter uppercase px-4 drop-shadow-2xl"></div>
+    </div>
+
+    <!-- LÓGICA PRINCIPAL: FIREBASE + THREE.JS -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CREDENCIALES DEL SUPER ADMINISTRADOR ---
+        const SUPER_ADMIN_EMAIL = "copauyunifreddy@gmail.com";
+        const SUPER_ADMIN_PASS = "V7#Luna!Roca$94_Sol@Nebula%815*Bosque&Rio?Fenix=27";
+
+        // =======================================================================
+        // ⚙️ 1. CONFIGURACIÓN FIREBASE (PARA GITHUB / HOSTING EXTERNO)
+        // Reemplaza "TU_API_KEY" y los demás valores con las credenciales reales
+        // que obtienes en tu consola de Firebase -> Configuración del Proyecto.
+        // =======================================================================
+        const externalFirebaseConfig = {
+ 	apiKey: "AIzaSyBW_YQpZ-zb0kgSb2K-AJgQOooh6ly9pEY",
+  	authDomain: "neon-drop-arena.firebaseapp.com",
+  	projectId: "neon-drop-arena",
+  	storageBucket: "neon-drop-arena.firebasestorage.app",
+  	messagingSenderId: "150740228787",
+  	appId: "1:150740228787:web:c50b15310efbcf96b6aec6"
+	};
+
+        let app, auth, db;
+        let currentUser = null;
+        let activePlayerDocId = null; // ID Único basado en el Nickname para evitar duplicados
+        let userRole = 'guest'; // 'player', 'admin', 'superadmin'
+        
+        let unsubscribePlayers = null;
+        let unsubscribeMe = null;
+        let unsubscribeAdmins = null;
+        let myPlayerData = { username: '', coins: 1000, wins: 0 };
+
+        // Variables de Juego Locales
+        let bet = 10;
+        let freeSpins = 0;
+        let isSpinning = false;
+        let currentTheme = 0;
+        let globalPlayersList = [];
+
+        // Detectar si estamos en el entorno de prueba interno o en tu GitHub externo
+        const isCanvasEnv = typeof __firebase_config !== 'undefined' && __firebase_config !== '{}' && __firebase_config !== '';
+        const firebaseConfigStr = isCanvasEnv ? __firebase_config : JSON.stringify(externalFirebaseConfig);
+        const firebaseConfig = JSON.parse(firebaseConfigStr);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'neon-drop-arena';
+
+        try {
+            // Inicializar solo si hay credenciales válidas
+            if(Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey !== "TU_API_KEY") {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+            } else {
+                setTimeout(() => showStatus("⚠️ Configura tus credenciales de Firebase en el código", "#ef4444"), 1000);
+            }
+        } catch (e) {
+            console.error("Firebase Error:", e);
+        }
+
+        const initAuth = async () => {
+            if(!auth) return;
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Error autenticando:", error);
+            }
+        };
+
+        if(auth) {
+            initAuth();
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                } else {
+                    currentUser = null;
+                    showView('auth-view');
+                }
+            });
+        }
+
+        // --- 2. GESTIÓN DE VISTAS Y MODALES ---
+        function showView(viewId) {
+            document.getElementById('auth-view').classList.add('hidden-view');
+            document.getElementById('admin-view').classList.add('hidden-view');
+            document.getElementById('game-ui').classList.add('hidden-view');
+            document.getElementById(viewId).classList.remove('hidden-view');
+        }
+
+        function showStatus(msg, color='yellow') {
+            const statusEl = document.getElementById('auth-status');
+            statusEl.innerText = msg;
+            statusEl.style.color = color;
+        }
+
+        // Sistema de Modal Custom
+        let modalCallback = null;
+        window.showCustomModal = (title, msg, showInput, confirmText, callback, inputPlaceholder = "") => {
+            document.getElementById('custom-modal-title').innerText = title;
+            document.getElementById('custom-modal-msg').innerText = msg;
+            
+            const input = document.getElementById('custom-modal-input');
+            if(showInput) {
+                input.classList.remove('hidden');
+                input.value = '';
+                input.placeholder = inputPlaceholder;
+            } else {
+                input.classList.add('hidden');
+            }
+
+            const btn = document.getElementById('custom-modal-confirm-btn');
+            btn.innerText = confirmText;
+            
+            modalCallback = callback;
+            document.getElementById('custom-modal').classList.remove('hidden-view');
+        };
+
+        window.closeCustomModal = () => {
+            document.getElementById('custom-modal').classList.add('hidden-view');
+            modalCallback = null;
+        };
+
+        document.getElementById('custom-modal-confirm-btn').addEventListener('click', () => {
+            if(modalCallback) {
+                const inputVal = document.getElementById('custom-modal-input').value;
+                modalCallback(inputVal);
+            }
+            window.closeCustomModal();
+        });
+
+        // --- 3. AUTENTICACIÓN DE JUGADORES Y EVITAR DUPLICADOS ---
+        window.loginPlayer = async () => {
+            if(!currentUser) {
+                showStatus("Conectando con el servidor...");
+                return;
+            }
+
+            const username = document.getElementById('username-input').value.trim();
+            if(!username) {
+                showStatus("¡Debes ingresar un nickname!", "#ef4444");
+                return;
+            }
+
+            userRole = 'player';
+            showStatus("Verificando jugador...");
+            
+            // Creamos un ID Único y constante basado en el Nickname para evitar duplicados.
+            activePlayerDocId = username.toLowerCase().replace(/\s+/g, '_');
+            const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', activePlayerDocId);
+            
+            try {
+                const docSnap = await getDoc(playerRef);
+                let isNewUser = false;
+                
+                if (docSnap.exists()) {
+                    showStatus("¡Bienvenido de nuevo! Cargando perfil...");
+                    await updateDoc(playerRef, { lastActive: new Date().toISOString() });
+                    
+                    // Si el usuario ya existe pero entra con 0 monedas, le recordamos recargar
+                    if((docSnap.data().coins || 0) <= 0) {
+                        setTimeout(() => {
+                            window.showCustomModal(
+                                "Sin Créditos",
+                                "Actualmente tienes 0 monedas. Por favor, contacta al administrador para recargar.",
+                                false,
+                                "Entendido",
+                                () => {}
+                            );
+                        }, 1000);
+                    }
+                } else {
+                    showStatus("Creando nuevo perfil de jugador...");
+                    isNewUser = true;
+                    await setDoc(playerRef, {
+                        username: username, // Conserva mayúsculas y minúsculas originales
+                        coins: 0, // Inician con 0 para obligar a contactar al admin
+                        wins: 0, // Registro inicial de victorias
+                        lastActive: new Date().toISOString(),
+                        isManual: false
+                    });
+                }
+
+                document.getElementById('player-welcome').innerText = `👤 ${username}`;
+                showView('game-ui');
+                initGameClient();
+
+                if (isNewUser) {
+                    setTimeout(() => {
+                        window.showCustomModal(
+                            "¡Registro Exitoso!",
+                            "Bienvenido al juego. Para comenzar a jugar, por favor contacta al administrador para que recargue tus monedas iniciales.",
+                            false,
+                            "Entendido",
+                            () => {}
+                        );
+                    }, 1000);
+                }
+            } catch (e) {
+                console.error(e);
+                showStatus("Error al conectar con la base de datos.", "#ef4444");
+            }
+        };
+
+        window.logout = async () => {
+            if(unsubscribePlayers) unsubscribePlayers();
+            if(unsubscribeMe) unsubscribeMe();
+            if(unsubscribeAdmins) unsubscribeAdmins();
+            showView('auth-view');
+            document.getElementById('username-input').value = '';
+            document.getElementById('admin-email').value = '';
+            document.getElementById('admin-pass').value = '';
+            userRole = 'guest';
+            activePlayerDocId = null;
+        };
+
+        // --- 4. AUTENTICACIÓN Y FUNCIONES ADMINISTRATIVAS ---
+        window.showAdminLogin = () => {
+            document.getElementById('admin-login-modal').classList.remove('hidden-view');
+        };
+
+        window.closeAdminLogin = () => {
+            document.getElementById('admin-login-modal').classList.add('hidden-view');
+            document.getElementById('admin-login-status').innerText = '';
+        };
+
+        window.performAdminLogin = async () => {
+            if(!currentUser) return;
+            const email = document.getElementById('admin-email').value.trim();
+            const pass = document.getElementById('admin-pass').value.trim();
+            const statusEl = document.getElementById('admin-login-status');
+
+            if (!email || !pass) {
+                statusEl.innerText = "Ingresa usuario y contraseña";
+                return;
+            }
+
+            statusEl.innerText = "Verificando credenciales...";
+
+            // Check Super Admin
+            if (email === SUPER_ADMIN_EMAIL && pass === SUPER_ADMIN_PASS) {
+                userRole = 'superadmin';
+                window.closeAdminLogin();
+                document.getElementById('admin-role-badge').innerText = '🔥 SUPER ADMINISTRADOR';
+                document.getElementById('super-admin-panel').classList.remove('hidden');
+                document.getElementById('super-admin-panel').classList.add('flex');
+                showView('admin-view');
+                initAdminDashboard();
+                return;
+            }
+
+            // Check Sub Admin
+            try {
+                const adminsCol = collection(db, 'artifacts', appId, 'public', 'data', 'admins');
+                const snapshot = await new Promise((resolve, reject) => {
+                    const unsub = onSnapshot(adminsCol, (snap) => {
+                        unsub(); resolve(snap);
+                    }, reject);
+                });
+
+                let found = false;
+                let isActive = true;
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.username === email && data.password === pass) {
+                        found = true;
+                        if(data.status === 'inactive') isActive = false;
+                    }
+                });
+
+                if (found && isActive) {
+                    userRole = 'admin';
+                    window.closeAdminLogin();
+                    document.getElementById('admin-role-badge').innerText = '🛡️ SUB-ADMINISTRADOR';
+                    document.getElementById('super-admin-panel').classList.add('hidden');
+                    document.getElementById('super-admin-panel').classList.remove('flex');
+                    showView('admin-view');
+                    initAdminDashboard();
+                } else if (found && !isActive) {
+                    statusEl.innerText = "Cuenta deshabilitada. Contacta al Super Admin.";
+                } else {
+                    statusEl.innerText = "Credenciales incorrectas.";
+                }
+            } catch (e) {
+                console.error(e);
+                statusEl.innerText = "Error verificando la base de datos.";
+            }
+        };
+
+        function showAdminMsg(msg, color) {
+            const el = document.getElementById('admin-dashboard-msg');
+            el.innerText = msg;
+            el.style.color = color;
+            setTimeout(() => { el.innerText = ''; }, 3500);
+        }
+
+        // FUNCIONES DE SUPER ADMIN
+        window.createSubAdmin = async () => {
+            if (userRole !== 'superadmin' || !currentUser) return;
+            const user = document.getElementById('new-admin-user').value.trim();
+            const pass = document.getElementById('new-admin-pass').value.trim();
+
+            if (!user || !pass) {
+                showAdminMsg("Completa ambos campos para registrar al Sub-Admin", "#ef4444");
+                return;
+            }
+
+            try {
+                const adminRef = doc(db, 'artifacts', appId, 'public', 'data', 'admins', user);
+                await setDoc(adminRef, {
+                    username: user,
+                    password: pass,
+                    status: 'active',
+                    createdAt: new Date().toISOString()
+                });
+                showAdminMsg(`✅ Sub-Administrador '${user}' creado con éxito.`, "#4ade80");
+                document.getElementById('new-admin-user').value = '';
+                document.getElementById('new-admin-pass').value = '';
+            } catch (e) {
+                console.error(e);
+                showAdminMsg("Error al crear Sub-Administrador", "#ef4444");
+            }
+        };
+
+        function renderSubAdminsList(admins) {
+            const container = document.getElementById('sub-admins-list');
+            container.innerHTML = '';
+            if(admins.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 text-sm py-4">No hay sub-administradores registrados.</div>';
+                return;
+            }
+
+            admins.forEach(admin => {
+                const row = document.createElement('div');
+                const isInactive = admin.status === 'inactive';
+                row.className = `flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/5 p-3 rounded-lg border gap-2 ${isInactive ? 'border-red-500/50 opacity-60' : 'border-white/10'}`;
+
+                const statusBtn = isInactive 
+                    ? `<button onclick="window.toggleAdminStatus('${admin.id}', 'active')" class="bg-green-500/20 hover:bg-green-500/40 text-green-400 px-3 py-1.5 rounded text-xs font-bold transition-colors w-full sm:w-auto">Dar de Alta</button>`
+                    : `<button onclick="window.toggleAdminStatus('${admin.id}', 'inactive')" class="bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-400 px-3 py-1.5 rounded text-xs font-bold transition-colors w-full sm:w-auto">Dar de Baja</button>`;
+
+                row.innerHTML = `
+                    <div class="flex-1 w-full">
+                        <div class="font-bold flex items-center gap-2">
+                            <span class="${isInactive ? 'text-gray-500' : 'text-cyan-400'}">👤 ${admin.username}</span>
+                            ${isInactive ? '<span class="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded">Baja</span>' : '<span class="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded">Activo</span>'}
+                        </div>
+                        <div class="text-gray-400 text-xs mt-1">Clave: <span class="font-mono text-gray-300 tracking-widest">${admin.password}</span></div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                        <button onclick="window.editAdminPass('${admin.id}')" class="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-3 py-1.5 rounded text-xs font-bold transition-colors w-full sm:w-auto">Editar Clave</button>
+                        ${statusBtn}
+                        <button onclick="window.deleteAdmin('${admin.id}')" class="bg-red-500/20 hover:bg-red-500/40 text-red-400 px-3 py-1.5 rounded text-xs font-bold transition-colors w-full sm:w-auto">Eliminar</button>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        window.toggleAdminStatus = async (id, newStatus) => {
+            if (userRole !== 'superadmin' || !currentUser) return;
+            try {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'admins', id);
+                await updateDoc(ref, { status: newStatus });
+                showAdminMsg(`El estado de '${id}' cambió a ${newStatus === 'active' ? 'ACTIVO' : 'BAJA'}.`, newStatus === 'active' ? "#4ade80" : "#facc15");
+            } catch(e) { console.error(e); }
+        };
+
+        window.deleteAdmin = (id) => {
+            if (userRole !== 'superadmin' || !currentUser) return;
+            window.showCustomModal(
+                "Eliminar Sub-Administrador",
+                `¿Estás seguro de eliminar permanentemente a '${id}' de la base de datos?`,
+                false,
+                "Eliminar",
+                async () => {
+                    try {
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'admins', id);
+                        await deleteDoc(ref);
+                        showAdminMsg(`Sub-Administrador '${id}' eliminado.`, "#ef4444");
+                    } catch(e) { console.error(e); }
+                }
+            );
+        };
+
+        window.editAdminPass = (id) => {
+            if (userRole !== 'superadmin' || !currentUser) return;
+            window.showCustomModal(
+                "Editar Contraseña",
+                `Ingresa la nueva contraseña para el sub-administrador '${id}':`,
+                true,
+                "Actualizar Clave",
+                async (newPass) => {
+                    if(newPass && newPass.trim() !== "") {
+                        try {
+                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'admins', id);
+                            await updateDoc(ref, { password: newPass.trim() });
+                            showAdminMsg(`Contraseña de '${id}' actualizada correctamente.`, "#4ade80");
+                        } catch(e) { console.error(e); }
+                    }
+                },
+                "Nueva contraseña segura..."
+            );
+        };
+
+        // GESTIÓN MANUAL DE JUGADORES (Evita duplicados)
+        window.manualCreateUser = async () => {
+            if (userRole !== 'superadmin' || !currentUser) return;
+            const user = document.getElementById('manual-player-user').value.trim();
+            const coins = parseInt(document.getElementById('manual-player-coins').value);
+
+            if (!user || isNaN(coins)) {
+                showAdminMsg("Ingresa un Nickname y una cantidad de monedas válida.", "#ef4444");
+                return;
+            }
+
+            try {
+                // Usamos el mismo algoritmo de ID único que al loguear
+                const manualId = user.toLowerCase().replace(/\s+/g, '_');
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', manualId);
+                
+                const docSnap = await getDoc(playerRef);
+                
+                if(docSnap.exists()) {
+                    // Si ya existe, simplemente actualizamos sus monedas en lugar de crear un error
+                    await updateDoc(playerRef, { coins: coins, lastActive: new Date().toISOString() });
+                    showAdminMsg(`✅ El jugador '${user}' ya existía. Monedas actualizadas a ${coins}.`, "#4ade80");
+                } else {
+                    // Creación nueva
+                    await setDoc(playerRef, {
+                        username: user,
+                        coins: coins,
+                        wins: 0, // Registro inicial de victorias
+                        lastActive: new Date().toISOString(),
+                        isManual: true
+                    });
+                    showAdminMsg(`✅ Jugador '${user}' añadido al ranking con ${coins} monedas.`, "#4ade80");
+                }
+                
+                document.getElementById('manual-player-user').value = '';
+                document.getElementById('manual-player-coins').value = '';
+            } catch (e) {
+                console.error(e);
+                showAdminMsg("Error procesando al jugador.", "#ef4444");
+            }
+        };
+
+        window.deletePlayer = (id) => {
+            if (userRole !== 'superadmin' || !currentUser) return;
+            window.showCustomModal(
+                "Eliminar Jugador",
+                "¿Estás seguro de que quieres eliminar a este jugador del ranking en vivo?",
+                false,
+                "Expulsar del Ranking",
+                async () => {
+                    try {
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'players', id);
+                        await deleteDoc(ref);
+                        showAdminMsg("Jugador eliminado del ranking.", "#facc15");
+                    } catch(e) { console.error(e); }
+                }
+            );
+        };
+
+        // --- 5. DASHBOARD Y CONTROLES INDEPENDIENTES DE MONEDAS ---
+        function initAdminDashboard() {
+            if(!currentUser) return;
+            
+            const playersCol = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+            unsubscribePlayers = onSnapshot(playersCol, (snapshot) => {
+                globalPlayersList = [];
+                snapshot.forEach(d => globalPlayersList.push({ id: d.id, ...d.data() }));
+                globalPlayersList.sort((a, b) => b.coins - a.coins);
+                
+                document.getElementById('total-players-count').innerText = globalPlayersList.length;
+                renderAdminList(globalPlayersList);
+            }, (err) => console.error(err));
+
+            if(userRole === 'superadmin') {
+                const adminsCol = collection(db, 'artifacts', appId, 'public', 'data', 'admins');
+                unsubscribeAdmins = onSnapshot(adminsCol, (snapshot) => {
+                    let adminsList = [];
+                    snapshot.forEach(d => adminsList.push({ id: d.id, ...d.data() }));
+                    renderSubAdminsList(adminsList);
+                }, (err) => console.error(err));
+            }
+        }
+
+        // Renderizado del Ranking en Admin con Controles Individuales
+        function renderAdminList(players) {
+            const container = document.getElementById('admin-players-list');
+            container.innerHTML = '';
+            
+            players.forEach((p, index) => {
+                const isTop3 = index < 3;
+                const row = document.createElement('div');
+                row.className = `grid grid-cols-12 gap-1 sm:gap-2 p-2 rounded-lg items-center ${isTop3 ? 'bg-white/10 border border-white/20' : 'bg-black/30'}`;
+                
+                const btnDelete = userRole === 'superadmin' ? 
+                    `<button onclick="window.deletePlayer('${p.id}')" class="bg-red-500/20 hover:bg-red-500/40 text-red-400 px-1.5 sm:px-2 py-1 rounded text-xs font-bold transition-colors" title="Eliminar Jugador">X</button>` : '';
+
+                row.innerHTML = `
+                    <div class="col-span-4 sm:col-span-4 font-bold flex items-center gap-1 sm:gap-2 truncate text-[10px] sm:text-xs">
+                        <span class="${index==0?'text-yellow-400':index==1?'text-gray-300':index==2?'text-orange-400':'text-gray-500'}">#${index+1}</span>
+                        ${p.username}
+                    </div>
+                    <div class="col-span-2 sm:col-span-2 text-center font-mono text-yellow-400 text-[10px] sm:text-sm" title="${p.coins} Monedas">${p.coins}</div>
+                    <div class="col-span-2 sm:col-span-2 text-center font-mono text-pink-400 text-[10px] sm:text-sm" title="${p.wins || 0} Victorias">🏆${p.wins || 0}</div>
+                    <div class="col-span-4 sm:col-span-4 text-right flex justify-end gap-1 items-center">
+                        <input type="number" id="custom-coins-${p.id}" placeholder="Cant." class="w-10 sm:w-14 bg-black/50 border border-white/20 rounded px-1 py-1 text-[10px] sm:text-xs text-center text-white outline-none focus:border-cyan-500">
+                        <button onclick="window.addCustomCoins('${p.id}')" class="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-1.5 sm:px-2 py-1 rounded text-xs font-bold transition-colors" title="Sumar/Restar (+/-)">+/-</button>
+                        <button onclick="window.setCustomCoins('${p.id}')" class="bg-green-500/20 hover:bg-green-500/40 text-green-400 px-1.5 sm:px-2 py-1 rounded text-xs font-bold transition-colors" title="Asignar Exactamente (=)">=</button>
+                        ${btnDelete}
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        // Acciones Independientes
+        window.addCustomCoins = async (id) => {
+            if (!currentUser) return;
+            const input = document.getElementById(`custom-coins-${id}`);
+            const val = parseInt(input.value);
+            if(isNaN(val)) return;
+
+            const player = globalPlayersList.find(p => p.id === id);
+            if(player) {
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'players', id);
+                    await updateDoc(ref, { coins: Math.max(0, player.coins + val) });
+                    input.value = '';
+                    showAdminMsg(`🪙 Modificación aplicada a ${player.username}.`, "#4ade80");
+                } catch(e) { console.error(e); }
+            }
+        };
+
+        window.setCustomCoins = async (id) => {
+            if (!currentUser) return;
+            const input = document.getElementById(`custom-coins-${id}`);
+            const val = parseInt(input.value);
+            if(isNaN(val) || val < 0) return;
+
+            const player = globalPlayersList.find(p => p.id === id);
+            if(player) {
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'players', id);
+                    await updateDoc(ref, { coins: val });
+                    input.value = '';
+                    showAdminMsg(`✅ ${player.username} ahora tiene exactamente ${val} monedas.`, "#4ade80");
+                } catch(e) { console.error(e); }
+            }
+        };
+
+        // Acciones Globales
+        window.giveCoinsToAll = (amount) => {
+            if (!currentUser) return;
+            globalPlayersList.forEach(p => {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'players', p.id);
+                updateDoc(ref, { coins: p.coins + amount }).catch(e => console.error(e));
+            });
+            showAdminMsg("🎁 Se regalaron monedas a todos.", "#4ade80");
+        };
+
+        window.resetAllPlayers = () => {
+            if (!currentUser) return;
+            window.showCustomModal(
+                "Reiniciar Ranking Total",
+                "¿Estás completamente seguro de devolver las monedas de TODOS los jugadores a 1000?",
+                false,
+                "¡SÍ, REINICIAR!",
+                () => {
+                    globalPlayersList.forEach(p => {
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'players', p.id);
+                        updateDoc(ref, { coins: 1000 }).catch(e => console.error(e));
+                    });
+                    showAdminMsg("⚠️ Todo el ranking fue reiniciado a 1000 monedas.", "#facc15");
+                }
+            );
+        };
+
+
+        // --- 6. CLIENTE DE JUEGO MULTIJUGADOR ---
+        function initGameClient() {
+            if(!currentUser || !activePlayerDocId) return;
+            
+            const myRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', activePlayerDocId);
+            unsubscribeMe = onSnapshot(myRef, (docSnap) => {
+                if(docSnap.exists()) {
+                    myPlayerData = docSnap.data();
+                    if(!isSpinning) updateGameUI();
+                }
+            }, (err) => console.error(err));
+
+            const playersCol = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+            unsubscribePlayers = onSnapshot(playersCol, (snapshot) => {
+                let list = [];
+                snapshot.forEach(d => list.push({ id: d.id, ...d.data() }));
+                list.sort((a, b) => b.coins - a.coins);
+                renderLeaderboard(list);
+            }, (err) => console.error(err));
+        }
+
+        function renderLeaderboard(players) {
+            const container = document.getElementById('leaderboard-list');
+            container.innerHTML = '';
+            
+            players.slice(0, 10).forEach((p, index) => {
+                const isMe = p.id === activePlayerDocId;
+                const row = document.createElement('div');
+                row.className = `flex justify-between items-center p-2 rounded-lg ${isMe ? 'bg-pink-500/20 border border-pink-500/50' : 'bg-white/5'}`;
+                
+                let colorClass = 'text-gray-300';
+                if(index === 0) colorClass = 'text-yellow-400';
+                if(index === 1) colorClass = 'text-gray-300';
+                if(index === 2) colorClass = 'text-orange-400';
+
+                row.innerHTML = `
+                    <span class="font-bold ${colorClass} truncate w-28">${index+1}. ${p.username} ${isMe ? '(Tú)' : ''}</span>
+                    <div class="flex flex-col items-end">
+                        <span class="font-mono text-sm text-yellow-400">${p.coins} 💰</span>
+                        <span class="text-[10px] text-pink-400 font-bold">🏆 ${p.wins || 0}</span>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function updateGameUI() {
+            document.getElementById('coins-display').innerText = myPlayerData.coins;
+            document.getElementById('bet-display').innerText = bet;
+            
+            const btn = document.getElementById('btn-spin');
+            const fsCont = document.getElementById('free-spins-container');
+            if (freeSpins > 0) {
+                fsCont.classList.remove('hidden');
+                document.getElementById('free-spins-display').innerText = freeSpins;
+                btn.innerText = "TIRO GRATIS";
+                btn.className = "mt-6 w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 active:scale-95 font-black text-xl py-4 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] uppercase tracking-widest transition-all";
+            } else {
+                fsCont.classList.add('hidden');
+                btn.innerText = "JUGAR";
+                btn.className = "mt-6 w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 active:scale-95 font-black text-xl py-4 rounded-xl shadow-[0_0_20px_rgba(219,39,119,0.4)] uppercase tracking-widest transition-all";
+            }
+        }
+
+        window.changeBet = (amount) => {
+            if (isSpinning) return;
+            bet += amount;
+            if (bet < 10) bet = 10;
+            if (bet > myPlayerData.coins && myPlayerData.coins > 0) bet = myPlayerData.coins;
+            updateGameUI();
+        };
+
+        window.changeTheme = (index) => {
+            if (isSpinning) return;
+            currentTheme = parseInt(index);
+            updateThreeTheme();
+        };
+
+        window.spinMachine = () => {
+            if (isSpinning || !currentUser) return;
+            
+            let currentCoins = myPlayerData.coins;
+
+            if (freeSpins > 0) {
+                freeSpins--;
+                showMessage(`¡Tiro Gratis!`, '#22d3ee', 1000);
+            } else {
+                if (currentCoins < bet) {
+                    showMessage("FONDOS INSUFICIENTES", '#ef4444', 2000);
+                    return;
+                }
+                currentCoins -= bet;
+                
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'players', activePlayerDocId);
+                    updateDoc(ref, { coins: currentCoins });
+                    myPlayerData.coins = currentCoins; 
+                } catch(e) { console.error(e); }
+            }
+            
+            updateGameUI();
+
+            isSpinning = true;
+            leverPulling = true;
+            document.getElementById('btn-spin').disabled = true;
+            document.getElementById('btn-spin').classList.add('opacity-50', 'cursor-not-allowed');
+
+            reels.forEach((reel, i) => {
+                reel.state = 'spinning';
+                reel.speed = 20 + Math.random() * 5; 
+                setTimeout(() => {
+                    reel.state = 'stopping';
+                    reel.targetSymbol = Math.floor(Math.random() * 6);
+                    const symbolAngle = (reel.targetSymbol + 0.5) * (Math.PI / 3);
+                    const currentMod = reel.angle % (Math.PI * 2);
+                    let distance = symbolAngle - currentMod;
+                    if (distance <= 0) distance += Math.PI * 2;
+                    reel.targetAngle = reel.angle + (Math.PI * 2 * 2) + distance;
+                }, 1000 + (i * 600)); 
+            });
+        };
+
+        function resolveSpinResult() {
+            document.getElementById('btn-spin').disabled = false;
+            document.getElementById('btn-spin').classList.remove('opacity-50', 'cursor-not-allowed');
+            
+            const r0 = reels[0].targetSymbol, r1 = reels[1].targetSymbol, r2 = reels[2].targetSymbol;
+            const theme = themes[currentTheme];
+            let newCoins = myPlayerData.coins;
+            let newWins = myPlayerData.wins || 0;
+            let wonJackpot = false;
+
+            if (r0 === r1 && r1 === r2) {
+                if (r0 === theme.bonusIndex) {
+                    freeSpins += 5;
+                    showMessage("🌟 MODO BONUS 🌟\n+5 Giros", '#fde047', 4000);
+                } else if (r0 === theme.penaltyIndex) {
+                    const loss = bet * 3;
+                    newCoins = Math.max(0, newCoins - loss);
+                    showMessage(`💥 CRÍTICO 💥\nPierdes ${loss}`, '#ef4444', 3500);
+                } else {
+                    const winAmount = bet * 10;
+                    newCoins += winAmount;
+                    newWins += 1; // Aumentar contador de victorias
+                    wonJackpot = true;
+                    
+                    showMessage(`🏆 JACKPOT 🏆\n+${winAmount}`, '#4ade80', 4000);
+                    createParticles(theme.colors.emissive);
+                }
+            }
+            
+            if(newCoins !== myPlayerData.coins || newWins !== (myPlayerData.wins || 0)) {
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'players', activePlayerDocId);
+                    updateDoc(ref, { coins: newCoins, wins: newWins });
+                    myPlayerData.coins = newCoins;
+                    myPlayerData.wins = newWins;
+                } catch(e) { console.error(e); }
+            }
+
+            if (wonJackpot) {
+                setTimeout(() => {
+                    window.showCustomModal(
+                        "¡GANASTE UN PREMIO!",
+                        "Has acertado un premio mayor. Por favor, ponte en contacto con el administrador para reclamarlo.",
+                        false,
+                        "Entendido",
+                        () => {}
+                    );
+                }, 1500);
+            } else if (newCoins <= 0 && freeSpins === 0) {
+                setTimeout(() => {
+                    window.showCustomModal(
+                        "Fondos Agotados",
+                        "Te has quedado sin créditos. Contacta al administrador para recargar monedas.",
+                        false,
+                        "Ir al Inicio",
+                        () => {
+                            window.logout(); // Lo devuelve a la pantalla principal
+                        }
+                    );
+                }, 1500);
+            }
+            
+            updateGameUI();
+        }
+
+        // --- 7. RENDERIZADO THREE.JS ---
+        const themes = [
+            { name: "Frutas Neón", symbols: ["🍒", "🍋", "🍉", "🍇", "⭐", "💣"], colors: { machine: 0x110000, emissive: 0xff0044, lever: 0xff0044, bg: 0x0a0005, light: 0xffbbee }, bonusIndex: 4, penaltyIndex: 5 },
+            { name: "Cyber Espacio", symbols: ["🚀", "👽", "🪐", "🛸", "⭐", "👾"], colors: { machine: 0x000511, emissive: 0x0088ff, lever: 0x00ffff, bg: 0x02050a, light: 0xbbddff }, bonusIndex: 4, penaltyIndex: 5 },
+            { name: "Oro Pirata", symbols: ["🏴‍☠️", "⚓️", "🦜", "🗡️", "💰", "☠️"], colors: { machine: 0x110a00, emissive: 0xffaa00, lever: 0xffcc00, bg: 0x0a0802, light: 0xffeebb }, bonusIndex: 4, penaltyIndex: 5 }
+        ];
+
+        let scene, camera, renderer, machineGroup, leverPivot, leverKnob, leverArm;
+        let reels = [], particles = [];
+        let raycaster, mouse, leverPulling = false;
+        let machineMaterial, ambientLight, dirLight, pointLight;
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(themes[currentTheme].colors.bg);
+            scene.fog = new THREE.Fog(themes[currentTheme].colors.bg, 12, 35);
+
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1, 18);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+            scene.add(ambientLight);
+
+            dirLight = new THREE.DirectionalLight(themes[currentTheme].colors.light, 1);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
+
+            pointLight = new THREE.PointLight(themes[currentTheme].colors.emissive, 2, 20);
+            pointLight.position.set(0, 2, 5);
+            scene.add(pointLight);
+
+            machineGroup = new THREE.Group();
+            scene.add(machineGroup);
+
+            createMachine();
+            createReels();
+            createLever();
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            window.addEventListener('pointerdown', onPointerDown);
+            window.addEventListener('resize', onWindowResize);
+
+            animate();
+        }
+
+        function createMachine() {
+            const bodyGeo = new THREE.BoxGeometry(9, 7, 5);
+            machineMaterial = new THREE.MeshStandardMaterial({ 
+                color: themes[currentTheme].colors.machine, emissive: themes[currentTheme].colors.emissive, emissiveIntensity: 0.2, roughness: 0.1, metalness: 0.8
+            });
+            machineGroup.add(new THREE.Mesh(bodyGeo, machineMaterial));
+
+            const edgeGeo = new THREE.EdgesGeometry(bodyGeo);
+            const edgeMat = new THREE.LineBasicMaterial({ color: themes[currentTheme].colors.emissive, linewidth: 2 });
+            machineGroup.add(new THREE.LineSegments(edgeGeo, edgeMat));
+
+            const bgGeo = new THREE.PlaneGeometry(7.5, 3);
+            const bg = new THREE.Mesh(bgGeo, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+            bg.position.set(0, 0, 2.51);
+            machineGroup.add(bg);
+
+            const glassGeo = new THREE.CylinderGeometry(2, 2, 8, 32, 1, false, Math.PI / 4, Math.PI / 2);
+            const glass = new THREE.Mesh(glassGeo, new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.9, opacity: 1, transparent: true, roughness: 0, ior: 1.5, thickness: 0.1 }));
+            glass.rotation.z = Math.PI / 2;
+            glass.position.set(0, 0, 0.7);
+            machineGroup.add(glass);
+
+            // --- BANNER ENTRETENIMIENTO MOBOL ---
+            const bannerCanvas = document.createElement('canvas');
+            bannerCanvas.width = 1024; 
+            bannerCanvas.height = 256; // <-- Corrección del ReferenceError aplicada aquí
+            const bCtx = bannerCanvas.getContext('2d');
+            
+            bCtx.fillStyle = '#050505';
+            bCtx.fillRect(0, 0, 1024, 256);
+            
+            bCtx.strokeStyle = '#00ffff';
+            bCtx.lineWidth = 12;
+            bCtx.strokeRect(6, 6, 1012, 244);
+
+            bCtx.textAlign = 'center';
+            bCtx.textBaseline = 'middle';
+            
+            bCtx.font = 'bold 70px "Segoe UI", sans-serif';
+            bCtx.fillStyle = '#ffffff';
+            bCtx.shadowColor = '#00ffff';
+            bCtx.shadowBlur = 20;
+            bCtx.fillText('ENTRETENIMIENTO', 512, 85);
+            
+            bCtx.font = '900 120px "Segoe UI", sans-serif';
+            bCtx.fillStyle = '#ff00aa';
+            bCtx.shadowColor = '#ff00aa';
+            bCtx.shadowBlur = 30;
+            bCtx.fillText('MoBol', 512, 185);
+
+            const bannerTexture = new THREE.CanvasTexture(bannerCanvas);
+            bannerTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            
+            const bannerGeo = new THREE.PlaneGeometry(8, 2);
+            const bannerMat = new THREE.MeshBasicMaterial({ map: bannerTexture });
+            const bannerMesh = new THREE.Mesh(bannerGeo, bannerMat);
+            bannerMesh.position.set(0, 4.6, 2.51); // Colocado sobre la máquina
+            
+            const bannerFrameGeo = new THREE.BoxGeometry(8.2, 2.2, 0.5);
+            const bannerFrame = new THREE.Mesh(bannerFrameGeo, machineMaterial);
+            bannerFrame.position.set(0, 4.6, 2.26); // Soporte trasero
+            
+            const frameEdgesGeo = new THREE.EdgesGeometry(bannerFrameGeo);
+            const frameEdgesMat = new THREE.LineBasicMaterial({ color: themes[currentTheme].colors.emissive, linewidth: 2 });
+            const frameEdges = new THREE.LineSegments(frameEdgesGeo, frameEdgesMat);
+            frameEdges.position.set(0, 4.6, 2.26);
+
+            machineGroup.add(bannerFrame);
+            machineGroup.add(frameEdges);
+            machineGroup.add(bannerMesh);
+        }
+
+        function createReels() {
+            reels.forEach(r => {
+                if(r.mesh.material.map) r.mesh.material.map.dispose();
+                machineGroup.remove(r.mesh);
+            });
+            reels = [];
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#111111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const symbols = themes[currentTheme].symbols;
+            ctx.font = '110px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+            for (let i = 0; i < 6; i++) {
+                ctx.fillStyle = i % 2 === 0 ? '#1a1a1a' : '#222222';
+                ctx.fillRect(i * (1024/6), 0, 1024/6, 256);
+                ctx.save(); ctx.translate((i + 0.5) * (1024 / 6), 128); ctx.rotate(-Math.PI / 2); 
+                ctx.shadowColor = 'white'; ctx.shadowBlur = 15; ctx.fillText(symbols[i], 0, 0); ctx.restore();
+                ctx.strokeStyle = themes[currentTheme].colors.emissive; ctx.lineWidth = 2; ctx.beginPath();
+                ctx.moveTo(i * (1024/6), 0); ctx.lineTo(i * (1024/6), 256); ctx.stroke();
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            const reelMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.2, metalness: 0.5 });
+            const reelGeo = new THREE.CylinderGeometry(1.8, 1.8, 2.2, 64);
+
+            for (let i = 0; i < 3; i++) {
+                const mesh = new THREE.Mesh(reelGeo, reelMat);
+                mesh.rotation.z = Math.PI / 2; mesh.position.set(-2.5 + (i * 2.5), 0, 1.2);
+                machineGroup.add(mesh);
+                reels.push({ mesh: mesh, angle: 0, targetAngle: 0, speed: 0, state: 'idle', targetSymbol: 0 });
+            }
+        }
+
+        function createLever() {
+            const leverBase = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 2), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.7 }));
+            leverBase.position.set(5, 0, 1); machineGroup.add(leverBase);
+
+            leverPivot = new THREE.Group(); leverPivot.position.set(5.5, 0, 1); machineGroup.add(leverPivot);
+
+            leverArm = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 3.5, 16), new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.9, roughness: 0.1 }));
+            leverArm.position.y = 1.75; leverPivot.add(leverArm);
+
+            leverKnob = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), new THREE.MeshStandardMaterial({ color: themes[currentTheme].colors.lever, emissive: themes[currentTheme].colors.lever, emissiveIntensity: 0.5, roughness: 0.1, metalness: 0.3 }));
+            leverKnob.position.y = 3.5; leverPivot.add(leverKnob);
+        }
+
+        function createParticles(color) {
+            const geo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+            const mat = new THREE.MeshBasicMaterial({ color: color });
+            for(let i=0; i<50; i++) {
+                const p = new THREE.Mesh(geo, mat);
+                p.position.set((Math.random()-0.5)*5, 2, 3);
+                p.velocity = new THREE.Vector3((Math.random()-0.5)*10, Math.random()*10, Math.random()*5);
+                scene.add(p); particles.push(p);
+            }
+        }
+
+        function updateThreeTheme() {
+            const t = themes[currentTheme];
+            scene.background.setHex(t.colors.bg); scene.fog.color.setHex(t.colors.bg);
+            dirLight.color.setHex(t.colors.light); pointLight.color.setHex(t.colors.emissive);
+            machineMaterial.color.setHex(t.colors.machine); machineMaterial.emissive.setHex(t.colors.emissive);
+            
+            machineGroup.children.forEach(c => { 
+                if(c.type === 'LineSegments') c.material.color.setHex(t.colors.emissive); 
+            });
+            
+            leverKnob.material.color.setHex(t.colors.lever); leverKnob.material.emissive.setHex(t.colors.lever);
+            createReels();
+        }
+
+        function showMessage(text, color = "#ffffff", duration = 2500) {
+            const msgBox = document.getElementById('message-box');
+            const msgText = document.getElementById('message-text');
+            msgText.innerText = text; msgText.style.color = color;
+            msgBox.classList.add('show');
+            setTimeout(() => { msgBox.classList.remove('show'); }, duration);
+        }
+
+        function onPointerDown(event) {
+            if(userRole !== 'player' || event.target.closest('.ui-layer') || isSpinning || document.getElementById('custom-modal').classList.contains('hidden-view') === false) return;
+            const clientX = event.clientX || (event.touches && event.touches[0].clientX);
+            const clientY = event.clientY || (event.touches && event.touches[0].clientY);
+            if(clientX === undefined) return;
+
+            mouse.x = (clientX / window.innerWidth) * 2 - 1; mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            if (raycaster.intersectObjects([leverKnob, leverArm]).length > 0) window.spinMachine();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+
+            if (leverPulling) {
+                leverPivot.rotation.x = THREE.MathUtils.lerp(leverPivot.rotation.x, Math.PI / 3, 15 * delta);
+                if (leverPivot.rotation.x > (Math.PI / 3) - 0.05) leverPulling = false;
+            } else {
+                leverPivot.rotation.x = THREE.MathUtils.lerp(leverPivot.rotation.x, 0, 8 * delta);
+            }
+
+            let allStopped = true;
+            for (let i = 0; i < 3; i++) {
+                const r = reels[i];
+                if (r.state === 'spinning') { r.angle += r.speed * delta; allStopped = false; } 
+                else if (r.state === 'stopping') {
+                    const diff = r.targetAngle - r.angle; r.angle += diff * 4 * delta;
+                    if (diff < 0.005) { r.angle = r.targetAngle; r.state = 'idle'; } else { allStopped = false; }
+                }
+                r.mesh.rotation.x = r.angle;
+            }
+
+            if (isSpinning && allStopped && !leverPulling) {
+                isSpinning = false;
+                resolveSpinResult();
+            }
+
+            if (!isSpinning) machineGroup.position.y = Math.sin(Date.now() * 0.002) * 0.05;
+
+            for(let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i]; p.position.addScaledVector(p.velocity, delta); p.velocity.y -= 15 * delta;
+                p.rotation.x += delta * 10; p.rotation.y += delta * 10;
+                if(p.position.y < -10) { scene.remove(p); particles.splice(i, 1); }
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.onload = initThree;
+    </script>
+</body>
+</html>
